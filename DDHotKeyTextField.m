@@ -50,6 +50,10 @@ static DDHotKeyTextFieldEditor *DDFieldEditor(void) {
     return [DDHotKeyTextFieldCell class];
 }
 
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
 - (void)setHotKey:(DDHotKey *)hotKey {
     if (_hotKey != hotKey) {
         _hotKey = hotKey;
@@ -70,6 +74,31 @@ static DDHotKeyTextFieldEditor *DDFieldEditor(void) {
 - (NSString *)stringValue {
     NSLog(@"-[DDHotKeyTextField stringValue] is not what you want. Use -[DDHotKeyTextField hotKey] instead.");
     return [super stringValue];
+}
+
+- (void)viewWillMoveToWindow:(NSWindow *)aWindow {
+    if (self.window) {
+        [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                        name:NSWindowDidResignKeyNotification
+                                                      object:self.window];
+    }
+    
+    if (aWindow) {
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(didResignKey:)
+                                                     name:NSWindowDidResignKeyNotification
+                                                   object:aWindow];
+    }
+    [super viewWillMoveToWindow:aWindow];
+}
+
+- (void)didResignKey:(NSNotification *)notification {
+    if (notification.object != self.window) {
+        return; // Wrong notifier
+    }
+    if(self.window.firstResponder == self.currentEditor) {
+        [self.window makeFirstResponder:nil];
+    }
 }
 
 @end
@@ -117,10 +146,7 @@ static DDHotKeyTextFieldEditor *DDFieldEditor(void) {
     BOOL ok = [super becomeFirstResponder];
     if (ok) {
         _hasSeenKeyDown = NO;
-        _globalMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:(NSKeyDownMask | NSFlagsChangedMask) handler:^NSEvent*(NSEvent *event){
-            [self processHotkeyEvent:event];
-            return nil;
-        }];
+        [self installGlobalMonitor];
     }
     return ok;
 }
@@ -129,13 +155,26 @@ static DDHotKeyTextFieldEditor *DDFieldEditor(void) {
     BOOL ok = [super resignFirstResponder];
     if (ok) {
         self.hotKeyField = nil;
-        if (_globalMonitor) {
-            [NSEvent removeMonitor:_globalMonitor];
-            _globalMonitor = nil;
-        }
+        [self removeGlobalMonitor];
     }
     
     return ok;
+}
+
+- (void)installGlobalMonitor {
+    if ( nil == _globalMonitor) {
+        _globalMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:(NSKeyDownMask | NSFlagsChangedMask) handler:^NSEvent*(NSEvent *event){
+            [self processHotkeyEvent:event];
+            return nil;
+        }];
+    }
+}
+
+- (void)removeGlobalMonitor {
+    if (_globalMonitor) {
+        [NSEvent removeMonitor:_globalMonitor];
+        _globalMonitor = nil;
+    }
 }
 
 @end
